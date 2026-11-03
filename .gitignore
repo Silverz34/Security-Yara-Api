@@ -8,6 +8,6 @@ wheels/
 
 samples/
 *.db
-.env
+.envgit
 # Virtual environments
 .venv
