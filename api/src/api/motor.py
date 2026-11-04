@@ -5,6 +5,20 @@ from pathlib import Path
 import yara
 
 RAIZ_REGLAS = Path(__file__).resolve().parents[2] / "rules"
+ORDEN_SEVERIDAD = {"low": 1, "medium": 2, "high": 3}
+SEVERIDAD_POR_REGLA = {
+    "RTFFILE": "low",
+    "Word_2007_XML_Flat_OPC": "low",
+    "BlackHole_v2": "high",
+}
+SEVERIDAD_POR_CATEGORIA = {
+    "vendor_maldocs_": "medium",
+    "vendor_cve_rules_": "high",
+    "vendor_exploit_kits_": "high",
+    "vendor_malware_": "high",
+}
+SEVERIDAD_POR_DEFECTO = "medium"
+RULES_VERSION = (RAIZ_REGLAS / "vendor" / "COMMIT.txt").read_text().strip()[:7]
 
 @cache
 def cargar_reglas() -> yara.Rules:
@@ -16,10 +30,22 @@ def cargar_reglas() -> yara.Rules:
             archivos[namespace] = str(ruta)
     return yara.compile(filepaths=archivos)
 
-ORDEN_SEVERIDAD = {"low": 1, "medium": 2, "high": 3}
-SEVERIDAD_POR_DEFECTO = "medium"
-RULES_VERSION = (RAIZ_REGLAS / "vendor" / "COMMIT.txt").read_text().strip()[:7]
 
+def severidad_de(regla: str, meta: dict, namespace: str) -> str:
+    if SEVERIDAD_POR_REGLA.get(regla) in ORDEN_SEVERIDAD:
+        return SEVERIDAD_POR_REGLA[regla]
+    if meta.get("severity") in ORDEN_SEVERIDAD:
+        return meta["severity"]
+    if isinstance(meta.get("weight"), int):
+        return "low"
+    if "cve" in regla.lower():
+        return "high"
+    if isinstance(meta.get("score"), int):
+        return "high" if meta["score"] >= 70 else "medium"
+    for prefijo, severidad in SEVERIDAD_POR_CATEGORIA.items():
+        if namespace.startswith(prefijo):
+            return severidad
+    return SEVERIDAD_POR_DEFECTO
 
 def escanear(datos: bytes) -> dict:
     coincidencias = []
@@ -42,10 +68,16 @@ def escanear(datos: bytes) -> dict:
             }
         )
 
-    if not coincidencias:
-        return {"verdict": "limpio", "severity": None, "matches": [], "rules_version": RULES_VERSION}
+    relevantes = [c for c in coincidencias if c["severity"] != "low"]
+    if not relevantes:
+        return {
+               "verdict": "limpio",
+               "severity": None,
+               "matches": coincidencias,
+               "rules_version": RULES_VERSION,
+        }
 
-    mayor = max(coincidencias, key=lambda c: ORDEN_SEVERIDAD[c["severity"]])["severity"]
+    mayor = max(relevantes, key=lambda c: ORDEN_SEVERIDAD[c["severity"]])["severity"]
     veredicto = "peligroso" if mayor == "high" else "sospechoso"
     return {
         "verdict": veredicto,
