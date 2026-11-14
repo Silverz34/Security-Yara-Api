@@ -30,5 +30,10 @@ def scan(
         raise HTTPException(413, "El archivo excede 25 MB")
     if hashlib.sha256(datos).hexdigest() != sha256.lower():
         raise HTTPException(400, "El SHA-256 no coincide con el archivo")
-
-    return escanear(datos)
+    contexto = {
+        "filename": filename,
+        "extension": extension.lower().lstrip("."),
+        "mime": mime,
+        "source_domain": source_domain,
+    }
+    return escanear(datos, contexto)

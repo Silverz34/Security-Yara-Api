@@ -19,6 +19,8 @@ SEVERIDAD_POR_CATEGORIA = {
 }
 SEVERIDAD_POR_DEFECTO = "medium"
 RULES_VERSION = (RAIZ_REGLAS / "vendor" / "COMMIT.txt").read_text().strip()[:7]
+VARIABLES_CONTEXTO = {"filename": "", "extension": "", "mime": "", "source_domain": ""}
+
 
 @cache
 def cargar_reglas() -> yara.Rules:
@@ -28,7 +30,7 @@ def cargar_reglas() -> yara.Rules:
             relativa = ruta.relative_to(RAIZ_REGLAS).as_posix()
             namespace = re.sub(r"\W", "_", relativa)
             archivos[namespace] = str(ruta)
-    return yara.compile(filepaths=archivos)
+        return yara.compile(filepaths=archivos, externals=VARIABLES_CONTEXTO)
 
 
 def severidad_de(regla: str, meta: dict, namespace: str) -> str:
@@ -47,9 +49,12 @@ def severidad_de(regla: str, meta: dict, namespace: str) -> str:
             return severidad
     return SEVERIDAD_POR_DEFECTO
 
-def escanear(datos: bytes) -> dict:
+
+def escanear(datos: bytes, contexto: dict | None = None) -> dict:
     coincidencias = []
-    for m in cargar_reglas().match(data=datos):
+    for m in cargar_reglas().match(
+        data=datos, externals={**VARIABLES_CONTEXTO, **(contexto or {})}
+    ):
         severidad = m.meta.get("severity", SEVERIDAD_POR_DEFECTO)
         if severidad not in ORDEN_SEVERIDAD:
             severidad = SEVERIDAD_POR_DEFECTO
@@ -58,7 +63,8 @@ def escanear(datos: bytes) -> dict:
                 "rule": m.rule,
                 "title_es": m.meta.get("title_es", m.rule),
                 "explanation_es": m.meta.get(
-                    "explanation_es", "El archivo coincide con una regla de detección conocida."
+                    "explanation_es",
+                    "El archivo coincide con una regla de detección conocida.",
                 ),
                 "recommendation_es": m.meta.get(
                     "recommendation_es", "No lo abras si no confías en su origen."
@@ -71,10 +77,10 @@ def escanear(datos: bytes) -> dict:
     relevantes = [c for c in coincidencias if c["severity"] != "low"]
     if not relevantes:
         return {
-               "verdict": "limpio",
-               "severity": None,
-               "matches": coincidencias,
-               "rules_version": RULES_VERSION,
+            "verdict": "limpio",
+            "severity": None,
+            "matches": coincidencias,
+            "rules_version": RULES_VERSION,
         }
 
     mayor = max(relevantes, key=lambda c: ORDEN_SEVERIDAD[c["severity"]])["severity"]
