@@ -30,7 +30,7 @@ def cargar_reglas() -> yara.Rules:
             relativa = ruta.relative_to(RAIZ_REGLAS).as_posix()
             namespace = re.sub(r"\W", "_", relativa)
             archivos[namespace] = str(ruta)
-        return yara.compile(filepaths=archivos, externals=VARIABLES_CONTEXTO)
+    return yara.compile(filepaths=archivos, externals=VARIABLES_CONTEXTO)
 
 
 def severidad_de(regla: str, meta: dict, namespace: str) -> str:
