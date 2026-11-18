@@ -1,11 +1,14 @@
 import hashlib
+from api.db import crear_tablas, guardar_escaneo
 from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from api.motor import escanear
 
+
 LIMITE_BYTES = 25 * 1024 * 1024
 
 app = FastAPI(title="SecureYara API")
+crear_tablas()
 
 
 @app.get("/health")
@@ -21,6 +24,8 @@ def scan(
     extension: Annotated[str, Form()] = "",
     mime: Annotated[str, Form()] = "",
     source_domain: Annotated[str, Form()] = "",
+    scan_mode: Annotated[str, Form()] = "principal",
+
 ):
     if "/" in filename or "\\" in filename:
         raise HTTPException(400, "filename debe ser solo el nombre, sin ruta")
@@ -36,4 +41,8 @@ def scan(
         "mime": mime,
         "source_domain": source_domain,
     }
-    return escanear(datos, contexto)
+    resultado = escanear(datos, contexto)
+    if scan_mode not in {"principal", "degradado"}:
+        scan_mode = "principal"
+    guardar_escaneo(sha256.lower(), len(datos), contexto, resultado, scan_mode)
+    return resultado

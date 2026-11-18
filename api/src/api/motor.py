@@ -1,6 +1,7 @@
 import re
 from functools import cache
 from pathlib import Path
+import hashlib
 
 import yara
 
@@ -66,9 +67,15 @@ SEVERIDAD_POR_CATEGORIA = {
     "vendor_malware_": "high",
 }
 SEVERIDAD_POR_DEFECTO = "medium"
-RULES_VERSION = (RAIZ_REGLAS / "vendor" / "COMMIT.txt").read_text().strip()[:7]
 VARIABLES_CONTEXTO = {"filename": "", "extension": "", "mime": "", "source_domain": ""}
 
+def version_reglas() -> str:
+    h = hashlib.sha256()
+    for ruta in sorted(RAIZ_REGLAS.rglob("*")):
+        if ruta.suffix in {".yar", ".yara"}:
+            h.update(ruta.read_bytes())
+    return h.hexdigest()[:7]
+RULES_VERSION = version_reglas()
 
 @cache
 def cargar_reglas() -> yara.Rules:
