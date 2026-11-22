@@ -1,12 +1,15 @@
+from starlette.types import HTTPExceptionHandler
+import threading, yara, logging
 import hashlib
 import re
 from api.db import crear_tablas, guardar_escaneo, consultar_cache, estadisticas
 from typing import Annotated
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Request, UploadFile, Depends
 from api.motor import escanear, RULES_VERSION, CATEGORIAS
 from api.config import (
-    BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES)
+    BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES, MAX_CONCURRENT_SCANS, SCAN_QUEUE_WAIT_S)
 from fastapi.responses import JSONResponse
+
 
 SUFIJO_CHROME = re.compile(r" \(\d+\)(?=(\.[^./\\]*)?$)")
 
@@ -33,13 +36,33 @@ async def limitar_cuerpo(request: Request, call_next):
             )
     return await call_next(request)
 
+logger = logging.getLogger("secureyara")
+semaforo_escaneos = threading.BoundedSemaphore(MAX_CONCURRENT_SCANS)
+
+
+def turno_de_escaneo():
+    if not semaforo_escaneos.acquire(timeout=SCAN_QUEUE_WAIT_S):
+        raise HTTPException(
+            503, "Servidor ocupado, intenta de nuevo", headers={"Retry-After": "2"}
+        )
+    try:
+        yield
+    finally:
+        semaforo_escaneos.release()
+
+
+@app.exception_handler(Exception)
+async def error_inesperado(request: Request, exc: Exception):
+    logger.exception("Error no controlado en %s %s", request.method, request.url.path)
+    return JSONResponse({"detail": "Error interno del servidor"}, status_code=500)
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-@app.post("/scan")
+@app.post("/scan", dependencies = [Depends(turno_de_escaneo)])
 def scan(
     file: Annotated[UploadFile, File()],
     sha256: Annotated[str, Form()],
@@ -62,7 +85,10 @@ def scan(
         "mime": mime,
         "source_domain": source_domain,
     }
-    resultado = escanear(datos, contexto)
+    try :
+        resultado = escanear(datos, contexto)
+    except yara.TimeoutError:
+         raise HTTPException(504, "El escaneo tardó demasiado") from None
     if scan_mode not in {"principal", "degradado"}:
         scan_mode = "principal"
     guardar_escaneo(sha256.lower(), len(datos), contexto, resultado, scan_mode)

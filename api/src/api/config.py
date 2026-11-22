@@ -28,7 +28,8 @@ MAX_UPLOAD_BYTES = _entero("MAX_UPLOAD_BYTES", 25 * 1024 * 1024)
 
 
 #se usaran más adelante
-SCAN_TIMEOUT_S = _entero("SCAN_TIMEOUT_S", 15)
+SCAN_TIMEOUT_S = _entero("SCAN_TIMEOUT_S", 10)
+SCAN_QUEUE_WAIT_S= _entero("SCAN_QUEUE_WAIT_S", 5)
 MAX_CONCURRENT_SCANS = _entero("MAX_CONCURRENT_SCANS", 2)
 API_KEY = os.getenv("API_KEY", "").strip()
 ENABLE_DOCS = _booleano("ENABLE_DOCS", True)

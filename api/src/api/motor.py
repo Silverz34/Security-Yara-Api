@@ -2,7 +2,8 @@ import re
 from functools import cache
 from pathlib import Path
 import hashlib
-
+from socket import timeout
+from api.config import SCAN_TIMEOUT_S
 import yara
 
 CATEGORIAS = {
@@ -134,7 +135,7 @@ def categoria_principal(coincidencias: list) -> str | None:
 def escanear(datos: bytes, contexto: dict | None = None) -> dict:
     coincidencias = []
     for m in cargar_reglas().match(
-        data=datos, externals={**VARIABLES_CONTEXTO, **(contexto or {})}
+        data=datos, externals={**VARIABLES_CONTEXTO, **(contexto or {})}, timeout= SCAN_TIMEOUT_S
     ):
         severidad = severidad_de(m.rule, m.meta, m.namespace)
         categoria = categoria_de(m.rule, m.namespace)
