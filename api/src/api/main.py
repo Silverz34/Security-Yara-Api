@@ -1,13 +1,14 @@
 from starlette.types import HTTPExceptionHandler
 import threading, yara, logging
 import hashlib
+import secrets
 import re
 from api.db import crear_tablas, guardar_escaneo, consultar_cache, estadisticas
 from typing import Annotated
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Request, UploadFile, Depends
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Request, UploadFile, Depends, Header
 from api.motor import escanear, RULES_VERSION, CATEGORIAS
 from api.config import (
-    BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES, MAX_CONCURRENT_SCANS, SCAN_QUEUE_WAIT_S)
+    BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES, MAX_CONCURRENT_SCANS, SCAN_QUEUE_WAIT_S, API_KEY)
 from fastapi.responses import JSONResponse
 
 
@@ -39,6 +40,16 @@ async def limitar_cuerpo(request: Request, call_next):
 logger = logging.getLogger("secureyara")
 semaforo_escaneos = threading.BoundedSemaphore(MAX_CONCURRENT_SCANS)
 
+if not API_KEY:
+    logger.warning("API_KEY vacía: la API no exige clave (solo para desarrollo)")
+
+def verificar_clave(x_api_key: Annotated[str | None, Header()] = None):
+    if not API_KEY:
+        return
+    if x_api_key is None or not secrets.compare_digest(
+        x_api_key.encode(), API_KEY.encode()
+    ):
+        raise HTTPException(401, "Clave de API inválida o ausente")
 
 def turno_de_escaneo():
     if not semaforo_escaneos.acquire(timeout=SCAN_QUEUE_WAIT_S):
@@ -51,6 +62,12 @@ def turno_de_escaneo():
         semaforo_escaneos.release()
 
 
+
+
+
+
+
+# Endpoits
 @app.exception_handler(Exception)
 async def error_inesperado(request: Request, exc: Exception):
     logger.exception("Error no controlado en %s %s", request.method, request.url.path)
@@ -62,7 +79,7 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/scan", dependencies = [Depends(turno_de_escaneo)])
+@app.post("/scan", dependencies = [Depends(verificar_clave), Depends(turno_de_escaneo)])
 def scan(
     file: Annotated[UploadFile, File()],
     sha256: Annotated[str, Form()],
@@ -95,7 +112,7 @@ def scan(
     return resultado
 
 
-@app.get("/verdicts/{sha256}")
+@app.get("/verdicts/{sha256}", dependencies = [Depends(verificar_clave), Depends(turno_de_escaneo)])
 def verdicto_guardado(
     sha256: str,
     filename: Annotated[str, Query(max_length=MAX_FILENAME)],
@@ -115,7 +132,7 @@ def verdicto_guardado(
     return resultado
 
 
-@app.get("/stats")
+@app.get("/stats", dependencies = [Depends(verificar_clave), Depends(turno_de_escaneo)])
 def estadisticas_generales():
     datos = estadisticas()
     for c in datos["categorias"]:

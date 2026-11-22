@@ -11,3 +11,5 @@ samples/
 .envgit
 # Virtual environments
 .venv
+.env
+!.env.example
