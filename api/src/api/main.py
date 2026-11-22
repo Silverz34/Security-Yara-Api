@@ -2,9 +2,11 @@ import hashlib
 import re
 from api.db import crear_tablas, guardar_escaneo, consultar_cache, estadisticas
 from typing import Annotated
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Request, UploadFile
 from api.motor import escanear, RULES_VERSION, CATEGORIAS
-from api.config import MAX_UPLOAD_BYTES
+from api.config import (
+    BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES)
+from fastapi.responses import JSONResponse
 
 SUFIJO_CHROME = re.compile(r" \(\d+\)(?=(\.[^./\\]*)?$)")
 
@@ -16,6 +18,21 @@ def preparar_nombre(filename: str) -> str:
 app = FastAPI(title="SecureYara API")
 crear_tablas()
 
+@app.middleware("http")
+async def limitar_cuerpo(request: Request, call_next):
+    longitud = request.headers.get("content-length")
+    if longitud is not None:
+        try:
+            demasiado_grande = int(longitud) > MAX_UPLOAD_BYTES + BODY_MARGIN_BYTES
+        except ValueError:
+            return JSONResponse({"detail": "Content-Length inválido"}, status_code=400)
+        if demasiado_grande:
+            return JSONResponse(
+                {"detail": "El cuerpo de la petición es demasiado grande"},
+                status_code=413,
+            )
+    return await call_next(request)
+
 
 @app.get("/health")
 def health():
@@ -26,10 +43,10 @@ def health():
 def scan(
     file: Annotated[UploadFile, File()],
     sha256: Annotated[str, Form()],
-    filename: Annotated[str, Form()],
-    extension: Annotated[str, Form()] = "",
-    mime: Annotated[str, Form()] = "",
-    source_domain: Annotated[str, Form()] = "",
+    filename: Annotated[str, Form(max_length=MAX_FILENAME)],
+    extension: Annotated[str, Form(max_length=MAX_EXTENSION)] = "",
+    mime: Annotated[str, Form(max_length=MAX_MIME)] = "",
+    source_domain: Annotated[str, Form(max_length=MAX_SOURCE_DOMAIN)] = "",
     scan_mode: Annotated[str, Form()] = "principal",
 
 ):
@@ -55,9 +72,9 @@ def scan(
 @app.get("/verdicts/{sha256}")
 def verdicto_guardado(
     sha256: str,
-    filename: str,
-    mime: str = "",
-    source_domain: str = "",
+    filename: Annotated[str, Query(max_length=MAX_FILENAME)],
+    mime: Annotated[str, Query(max_length=MAX_MIME)] = "",
+    source_domain: Annotated[str, Query(max_length=MAX_SOURCE_DOMAIN)] = "",
     scan_mode: str = "principal",
 ):
     if not re.fullmatch(r"[0-9a-f]{64}", sha256.lower()):
