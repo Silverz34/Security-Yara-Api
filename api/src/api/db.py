@@ -1,11 +1,9 @@
 import json
-import os
 from datetime import datetime, timezone
-
+from api.config import DATABASE_URL
 from sqlalchemy import Boolean, DateTime, Integer, String, Text, create_engine, select, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///secureyara.db")
 engine = create_engine(DATABASE_URL)
 ALERTAS = ["sospechoso","peligroso"]
 

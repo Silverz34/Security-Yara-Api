@@ -7,12 +7,12 @@ import yara
 
 CATEGORIAS = {
     "familia_malware": {
-        "nombre_es": "Malware de una familia conocida",
+        "nombre_es": "Familia de Malware",
         "explicacion_es": "El archivo coincide con la firma de una familia de malware conocida.",
         "recomendacion_es": "Elimínalo y no lo ejecutes.",
     },
     "exploit_cve": {
-        "nombre_es": "Exploit de vulnerabilidad conocida",
+        "nombre_es": "Exploit CVE",
         "explicacion_es": "El archivo contiene un patrón asociado a una vulnerabilidad conocida, que un atacante podría aprovechar al abrirlo.",
         "recomendacion_es": "Elimínalo y no lo abras con programas sin actualizar.",
     },
@@ -22,7 +22,7 @@ CATEGORIAS = {
         "recomendacion_es": "Elimínalo y desconfía del sitio de origen.",
     },
     "documento_malicioso": {
-        "nombre_es": "Documento malicioso",
+        "nombre_es": "Doc. malicioso",
         "explicacion_es": "El documento contiene elementos que se usan para ejecutar código sin que lo notes, como macros u objetos incrustados.",
         "recomendacion_es": "No habilites macros ni contenido activo, y ábrelo solo si confías en su origen.",
     },

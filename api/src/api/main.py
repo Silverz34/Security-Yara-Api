@@ -4,9 +4,8 @@ from api.db import crear_tablas, guardar_escaneo, consultar_cache, estadisticas
 from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from api.motor import escanear, RULES_VERSION, CATEGORIAS
+from api.config import MAX_UPLOAD_BYTES
 
-
-LIMITE_BYTES = 25 * 1024 * 1024
 SUFIJO_CHROME = re.compile(r" \(\d+\)(?=(\.[^./\\]*)?$)")
 
 def preparar_nombre(filename: str) -> str:
@@ -35,9 +34,9 @@ def scan(
 
 ):
     filename = preparar_nombre(filename)
-    datos = file.file.read(LIMITE_BYTES + 1)
-    if len(datos) > LIMITE_BYTES:
-        raise HTTPException(413, "El archivo excede 25 MB")
+    datos = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(datos) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"El archivo excede {MAX_UPLOAD_BYTES/(1024 * 1024):g}MB")
     if hashlib.sha256(datos).hexdigest() != sha256.lower():
         raise HTTPException(400, "El SHA-256 no coincide con el archivo")
     contexto = {
