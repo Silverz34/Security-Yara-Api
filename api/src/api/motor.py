@@ -5,6 +5,13 @@ import hashlib
 from socket import timeout
 from api.config import SCAN_TIMEOUT_S
 import yara
+import io
+import time
+import zipfile
+import zlib
+from api.config import MAX_UPLOAD_BYTES, SCAN_TIMEOUT_S, ZIP_MAX_ENTRIES, ZIP_MAX_TOTAL_BYTES
+
+timeout=timeout or SCAN_TIMEOUT_S
 
 CATEGORIAS = {
     "familia_malware": {
@@ -131,8 +138,7 @@ def categoria_principal(coincidencias: list) -> str | None:
     )
     return mejor["category"]
 
-
-def escanear(datos: bytes, contexto: dict | None = None) -> dict:
+def escanear(datos: bytes, contexto: dict | None = None, timeout: int | None = None) -> dict:
     coincidencias = []
     for m in cargar_reglas().match(
         data=datos, externals={**VARIABLES_CONTEXTO, **(contexto or {})}, timeout= SCAN_TIMEOUT_S
@@ -155,6 +161,10 @@ def escanear(datos: bytes, contexto: dict | None = None) -> dict:
             }
         )
 
+    return resumir(coincidencias)
+
+
+def resumir(coincidencias: list) -> dict:
     relevantes = [c for c in coincidencias if c["severity"] != "low"]
     if not relevantes:
         return {
@@ -164,13 +174,75 @@ def escanear(datos: bytes, contexto: dict | None = None) -> dict:
             "rules_version": RULES_VERSION,
             "main_category": None,
         }
-
     mayor = max(relevantes, key=lambda c: ORDEN_SEVERIDAD[c["severity"]])["severity"]
-    veredicto = "peligroso" if mayor == "high" else "sospechoso"
     return {
-        "verdict": veredicto,
+        "verdict": "peligroso" if mayor == "high" else "sospechoso",
         "severity": mayor,
         "matches": coincidencias,
         "rules_version": RULES_VERSION,
         "main_category": categoria_principal(coincidencias),
     }
+
+
+def _restante(limite: float) -> int:
+    segundos = limite - time.monotonic()
+    if segundos <= 0:
+        raise yara.TimeoutError("tiempo total de escaneo agotado")
+    return max(1, int(segundos))
+
+
+def _contexto_de_entrada(nombre_interno: str, contexto: dict) -> dict:
+    nombre = nombre_interno.replace("\\", "/").rsplit("/", 1)[-1][:255]
+    extension = nombre.rsplit(".", 1)[-1].lower()[:32] if "." in nombre else ""
+    return {
+        "filename": nombre,
+        "extension": extension,
+        "mime": "",
+        "source_domain": contexto.get("source_domain", ""),
+    }
+
+
+def escanear_con_zip(datos: bytes, contexto: dict | None = None) -> dict:
+    contexto = contexto or {}
+    limite = time.monotonic() + SCAN_TIMEOUT_S
+    resultado = escanear(datos, contexto, timeout=SCAN_TIMEOUT_S)
+
+    es_zip = (
+        contexto.get("extension") == "zip" or contexto.get("mime") == "application/zip"
+    ) and datos[:4] == b"PK\x03\x04"
+    if not es_zip:
+        return resultado
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(datos))
+    except zipfile.BadZipFile:
+        return resultado
+
+    coincidencias = list(resultado["matches"])
+    total = 0
+    with zf:
+        entradas = [i for i in zf.infolist() if not i.is_dir()][:ZIP_MAX_ENTRIES]
+        for info in entradas:
+            if info.flag_bits & 0x1:  # cifrado: no se puede inspeccionar
+                continue
+            if info.file_size > MAX_UPLOAD_BYTES or total + info.file_size > ZIP_MAX_TOTAL_BYTES:
+                continue
+            try:
+                with zf.open(info) as f:
+                    contenido = f.read(MAX_UPLOAD_BYTES + 1)
+            except (zipfile.BadZipFile, NotImplementedError, RuntimeError, EOFError, zlib.error):
+                continue
+            total += len(contenido)
+            r = escanear(
+                contenido,
+                _contexto_de_entrada(info.filename, contexto),
+                timeout=_restante(limite),
+            )
+            for m in r["matches"]:
+                coincidencias.append(
+                    {
+                        **m,
+                        "explanation_es": f"{m['explanation_es']} (dentro del ZIP: {info.filename})",
+                        "archivo_interno": info.filename,
+                    }
+                )
+    return resumir(coincidencias)

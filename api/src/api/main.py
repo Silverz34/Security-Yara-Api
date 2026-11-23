@@ -6,7 +6,7 @@ import re
 from api.db import crear_tablas, guardar_escaneo, consultar_cache, estadisticas
 from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile,Request,Depends, Header
-from api.motor import escanear, RULES_VERSION, CATEGORIAS
+from api.motor import RULES_VERSION, CATEGORIAS, cargar_reglas, escanear_con_zip
 from api.config import (
     BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES, MAX_CONCURRENT_SCANS, SCAN_QUEUE_WAIT_S, API_KEY, ENABLE_DOCS)
 from fastapi.responses import JSONResponse
@@ -26,6 +26,7 @@ app = FastAPI(
     redoc_url="/redoc" if ENABLE_DOCS else None,
     openapi_url="/openapi.json" if ENABLE_DOCS else None)
 crear_tablas()
+cargar_reglas()
 
 @app.middleware("http")
 async def limitar_cuerpo(request: Request, call_next):
@@ -106,7 +107,7 @@ def scan(
         "source_domain": source_domain,
     }
     try :
-        resultado = escanear(datos, contexto)
+        resultado = escanear_con_zip(datos, contexto)
     except yara.TimeoutError:
          raise HTTPException(504, "El escaneo tardó demasiado") from None
     if scan_mode not in {"principal", "degradado"}:

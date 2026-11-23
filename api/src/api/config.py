@@ -1,5 +1,6 @@
 #configuracion central de la api
 import os
+from zipfile import ZIP_MAX_COMMENT
 
 def _entero(nombre:str, defecto: int, minimo: int = 1) -> int:
     crudo = os.getenv(nombre, "").strip()
@@ -39,3 +40,7 @@ MAX_MIME = 128
 MAX_SOURCE_DOMAIN= 255
 # Margen sobre MAX_UPLOAD_BYTES
 BODY_MARGIN_BYTES = 64 * 1024
+
+#Limites para abrir archivos ZIP (uan sola capa)
+ZIP_MAX_ENTRIES = 50
+ZIP_MAX_TOTAL_BYTES = 2 * MAX_UPLOAD_BYTES
