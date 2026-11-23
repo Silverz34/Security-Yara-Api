@@ -5,11 +5,12 @@ import secrets
 import re
 from api.db import crear_tablas, guardar_escaneo, consultar_cache, estadisticas
 from typing import Annotated
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Request, UploadFile, Depends, Header
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile,Request,Depends, Header
 from api.motor import escanear, RULES_VERSION, CATEGORIAS
 from api.config import (
-    BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES, MAX_CONCURRENT_SCANS, SCAN_QUEUE_WAIT_S, API_KEY)
+    BODY_MARGIN_BYTES, MAX_EXTENSION, MAX_FILENAME, MAX_MIME, MAX_SOURCE_DOMAIN, MAX_UPLOAD_BYTES, MAX_CONCURRENT_SCANS, SCAN_QUEUE_WAIT_S, API_KEY, ENABLE_DOCS)
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 
 SUFIJO_CHROME = re.compile(r" \(\d+\)(?=(\.[^./\\]*)?$)")
@@ -19,7 +20,11 @@ def preparar_nombre(filename: str) -> str:
         raise HTTPException(400, "filename debe ser solo el nombre, sin ruta")
     return SUFIJO_CHROME.sub("", filename, count=1)
 
-app = FastAPI(title="SecureYara API")
+app = FastAPI(
+    title="SecureYara API",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None)
 crear_tablas()
 
 @app.middleware("http")
@@ -60,8 +65,6 @@ def turno_de_escaneo():
         yield
     finally:
         semaforo_escaneos.release()
-
-
 
 
 
@@ -112,20 +115,25 @@ def scan(
     return resultado
 
 
-@app.get("/verdicts/{sha256}", dependencies = [Depends(verificar_clave), Depends(turno_de_escaneo)])
-def verdicto_guardado(
-    sha256: str,
-    filename: Annotated[str, Query(max_length=MAX_FILENAME)],
-    mime: Annotated[str, Query(max_length=MAX_MIME)] = "",
-    source_domain: Annotated[str, Query(max_length=MAX_SOURCE_DOMAIN)] = "",
-    scan_mode: str = "principal",
-):
-    if not re.fullmatch(r"[0-9a-f]{64}", sha256.lower()):
-        raise HTTPException(400, "sha256 inválido")
-    if scan_mode not in {"principal", "degradado"}:
-        scan_mode = "principal"
+class ConsultaVeredicto(BaseModel):
+    sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    filename: str = Field(max_length=MAX_FILENAME)
+    mime: str = Field(default="", max_length=MAX_MIME)
+    source_domain: str = Field(default="", max_length=MAX_SOURCE_DOMAIN)
+    scan_mode: str = Field(default="principal", max_length=16)
+
+@app.post("/verdicts/lookup", dependencies=[Depends(verificar_clave)])
+def consultar_veredicto(consulta: ConsultaVeredicto):
+    scan_mode = (
+        consulta.scan_mode if consulta.scan_mode in {"principal", "degradado"} else "principal"
+    )
     resultado = consultar_cache(
-        sha256.lower(), preparar_nombre(filename), mime, source_domain, RULES_VERSION, scan_mode
+        consulta.sha256.lower(),
+        preparar_nombre(consulta.filename),
+        consulta.mime,
+        consulta.source_domain,
+        RULES_VERSION,
+        scan_mode,
     )
     if resultado is None:
         raise HTTPException(404, "Sin veredicto guardado para estos datos")
