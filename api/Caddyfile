@@ -1,0 +1,6 @@
+secureyara.duckdns.org {
+    request_body {
+        max_size 27000000
+    }
+    reverse_proxy api:8000
+}
