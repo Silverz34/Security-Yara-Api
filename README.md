@@ -40,24 +40,7 @@ Además, la API guarda un **historial** y una **caché por hash** en SQLite, y e
 
 ## 2. Cómo funciona
 
-```
-Extensión (Chromium)                         API (FastAPI)
-─────────────────────                        ─────────────────────────────────────
-1. Pausa la descarga y
-   obtiene el archivo
-2. Calcula el SHA-256
-3. POST /verdicts/lookup  ───────────────▶   Busca en la caché (hash + reglas + contexto)
-                          ◀───────────────   200 con el resultado guardado, o 404
-4. Si no hay resultado:
-   POST /scan (multipart) ───────────────▶   Valida la entrada y los límites
-                                             Verifica que el SHA-256 coincida
-                                             Ejecuta las reglas YARA con el contexto
-                                             (abre el ZIP si corresponde)
-                                             Calcula el veredicto y lo guarda
-                          ◀───────────────   JSON con el veredicto y las coincidencias
-5. Muestra el aviso o reanuda
-   la descarga
-```
+![Diagrama de arquitectura](./image/diagrama_1.png)
 
 ## 3. Estructura del repositorio
 
@@ -446,7 +429,7 @@ uv run python scripts/servidor_muestras.py
 | `Caddyfile` | Define el dominio, obtiene el certificado de Let's Encrypt, redirige HTTP a HTTPS, limita el cuerpo de las peticiones (27 MB) y reenvía a `api:8000`. |
 
 
-![Diagrama de arquitectura](./image/diagrama.png)
+![Diagrama de arquitectura](./image/diagrama_2.png)
 
 ### 12.2 Despliegue de referencia (AWS)
 
